@@ -111,7 +111,7 @@ macro_rules! qdev_prop {
             $kind,
             $name,
             (<$crate::conf_type!($type) as ConstDefault>::DEFAULT).$field,
-            <$type as $crate::DeviceTypeImpl>::CONF_OFFSET + std::mem::offset_of!($crate::conf_type!($type), $field)
+            <$type as $crate::DeviceTypeImpl>::CONF_OFFSET + $crate::offset_of!($crate::conf_type!($type), $field)
         )
     };
 }
@@ -126,7 +126,7 @@ macro_rules! qdev_define_type {
             @extends $super $(,$supers)*, $crate::Object);
 
         unsafe impl $crate::DeviceTypeImpl for $struct {
-            const CONF_OFFSET: usize = std::mem::offset_of!($struct, conf);
+            const CONF_OFFSET: usize = $crate::offset_of!($struct, conf);
 
             fn properties() -> *const $crate::Property {
                 static mut PROPERTIES: &'static [$crate::Property] = &[$($props),+];

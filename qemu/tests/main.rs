@@ -14,11 +14,16 @@ use qemu::DeviceState;
 
 use qemu::Result;
 
+use qemu::with_offsets;
+
 use std::cell::RefCell;
 
-#[derive(Default, ConstDefault)]
-struct TestConf {
-    foo: bool,
+with_offsets! {
+    #[repr(C)]
+    #[derive(Default, ConstDefault)]
+    struct TestConf {
+        foo: bool,
+    }
 }
 
 #[derive(Default)]

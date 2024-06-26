@@ -31,3 +31,7 @@ pub use util::foreign::IntoNative;
 pub use util::foreign::OwnedPointer;
 pub use util::zeroed::Zeroed;
 pub type Result<T> = std::result::Result<T, Error>;
+
+// with_offsets is exported directly from util::offset_of
+#[cfg(has_offset_of)]
+pub use std::mem::offset_of;

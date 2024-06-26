@@ -12,3 +12,6 @@ cstr = { version = "=0.2.10" }
 
 [dev-dependencies]
 matches = ">=0"
+
+[build-dependencies]
+version_check = { version = "~0.9" }

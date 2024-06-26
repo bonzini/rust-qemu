@@ -95,11 +95,14 @@ unsafe fn rust_type_register<T: TypeImpl + ObjectImpl>() {
 #[macro_export]
 macro_rules! qom_define_type {
     ($name:expr, $struct:ident, $conf_ty:ty, $state_ty:ty; @extends $super:ty $(,$supers:ty)*) => {
-        struct $struct {
-            // self.base dropped by call to superclass instance_finalize
-            base: std::mem::ManuallyDrop<$super>,
-            conf: $conf_ty,
-            state: $state_ty,
+        $crate::with_offsets! {
+            #[repr(C)]
+            struct $struct {
+                // self.base dropped by call to superclass instance_finalize
+                base: std::mem::ManuallyDrop<$super>,
+                conf: $conf_ty,
+                state: $state_ty,
+            }
         }
 
         // Define IsA markers for the struct itself and all the superclasses
