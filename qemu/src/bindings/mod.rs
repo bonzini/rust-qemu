@@ -1,4 +1,5 @@
-use std::ffi::{c_char, c_void};
+use libc::c_char;
+use std::ffi::c_void;
 
 #[repr(C)]
 pub struct Object {

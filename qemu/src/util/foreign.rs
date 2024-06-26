@@ -4,7 +4,8 @@
 /// Traits to map between C structs and native Rust types.
 /// Similar to glib-rs but a bit simpler and possibly more
 /// idiomatic.
-use std::ffi::{c_char, c_void, CStr};
+use libc::c_char;
+use std::ffi::{c_void, CStr};
 use std::fmt;
 use std::fmt::Debug;
 use std::mem;
@@ -151,7 +152,7 @@ pub trait FromForeign: CloneToForeign + Sized {
     /// # use qemu::FromForeign;
     /// let p = c"Hello, world!".as_ptr();
     /// let s = unsafe {
-    ///     String::cloned_from_foreign(p as *const std::ffi::c_char)
+    ///     String::cloned_from_foreign(p as *const libc::c_char)
     /// };
     /// assert_eq!(s, "Hello, world!");
     /// ```
