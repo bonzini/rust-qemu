@@ -69,7 +69,8 @@ where
     /// Bindings to C APIs will use it a lot, but otherwise it should not
     /// be necessary.
     unsafe fn as_mut_ptr(&self) -> *mut Self::Target {
-        #[allow(clippy::as_ptr_cast_mut)] {
+        #[allow(clippy::as_ptr_cast_mut)]
+        {
             self.as_ptr().cast_mut()
         }
     }
@@ -204,7 +205,7 @@ impl<T: ObjectType> Arc<T> {
 
             // SAFETY: the ref is moved (thanks to ManuallyDrop) from
             // self to casted_ref
-            Some(casted_ref) => Ok(unsafe { Arc::<U>::from_raw(casted_ref) })
+            Some(casted_ref) => Ok(unsafe { Arc::<U>::from_raw(casted_ref) }),
         }
     }
 
