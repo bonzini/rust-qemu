@@ -6,9 +6,11 @@ use crate::bindings::object_dynamic_cast;
 use crate::bindings::Object;
 use crate::bindings::{object_ref, object_unref};
 
+use crate::qom::object::ObjectMethods;
 use crate::qom::object::ObjectType;
 
 use std::borrow::Borrow;
+use std::fmt::{self, Debug};
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ptr::NonNull;
@@ -262,5 +264,11 @@ impl<T: ObjectType> Drop for Arc<T> {
         unsafe {
             object_unref(self.unsafe_cast::<Object>().as_mut_ptr());
         }
+    }
+}
+
+impl<T: IsA<Object>> Debug for Arc<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.deref().debug_fmt(f)
     }
 }

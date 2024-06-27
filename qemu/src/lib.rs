@@ -5,6 +5,8 @@ pub mod bindings;
 pub use bindings::Object;
 
 pub mod qom;
+pub use qom::object::ObjectClassMethods;
+pub use qom::object::ObjectMethods;
 pub use qom::object::ObjectType;
 pub use qom::refs::Arc;
 pub use qom::refs::ObjectCast;
