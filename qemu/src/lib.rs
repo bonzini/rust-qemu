@@ -2,6 +2,12 @@
 #![allow(dead_code)]
 
 pub mod bindings;
+pub use bindings::Object;
+
+pub mod qom;
+pub use qom::object::ObjectType;
+pub use qom::refs::Arc;
+pub use qom::refs::ObjectCast;
 
 pub mod util;
 pub use util::error::Error;

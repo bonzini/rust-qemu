@@ -1,0 +1,82 @@
+Rust QOM interoperability design
+--------------------------------
+
+Passing objects around
+----------------------
+
+ObjectRef:
+-> trait for performing casts on objects
+-> upcasts safe at compile time, downcasts safe at runtime
+-> implemented by &T and qom::Arc<T>
+-> casting &T produces &U, casting qom::Arc<T> produces qom::Arc<U>
+
+qom::Arc<T>
+-> T is a struct for a QOM object
+-> cloning qom::Arc calls object_ref, dropping qom::Arc calls object_unref
+
+
+Calling methods
+---------------
+
+- all methods &self (interior mutability)
+  - Rust implementation needs to wrap state with Cell<>, RefCell<> or Mutex<>
+
+one struct per class; one trait per non-final class; one trait per interface
+struct: Object, Device, ...
+- defines constructors
+     example: PL011::new()   (technically defined on ObjectType)
+
+- defines methods of final classes
+
+trait: ObjectMethods, DeviceMethods, UserCreatableMethods, ...
+- defines methods of non-final classes and interfaces
+     example: obj.typename()
+
+- automatically implemented by &T where T is a subclass
+
+
+all methods expect interior mutability
+- structs not Send/Sync by default since they contain C pointers
+  - hence &T and Arc<T> also not thread-safe
+- good: QOM tree (e.g. object_unparent) not thread-safe
+- what if objects _are_ thread-safe?
+  - possibly another trait ObjectSyncMethods?
+
+Bindings for C classes
+----------------------
+
+struct must implement ObjectType
+
+    unsafe impl ObjectType for Object {
+        const TYPE: &'static CStr = c"object";
+    }
+
+struct must implement IsA<T> for all superclasses T
+
+    unsafe impl IsA<Object> for Object {}
+
+
+Defining QOM classes in Rust
+----------------------------
+
+struct must be #[repr(C)]
+
+one traits per class + one more if it has virtual functions
+
+trait #1: ObjectTypeImpl, DeviceTypeImpl, ...
+- metadata
+    type Super: ObjectType;
+- functions:
+    unsafe fn instance_init(obj: *mut Self);
+    ...
+
+trait #2: ObjectImpl, DeviceImpl, ...
+- functions:
+    fn unrealize(&self)
+
+Rust implementation split in configuration (Default + ConstDefault) and
+state (Default)
+
+instance_init implemented automatically via Default/ConstDefault trait
+   maybe: pre_init hook that replaces memset(obj, 0, type->instance_size)?
+instance_finalize implemented automatically via Drop trait
