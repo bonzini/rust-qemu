@@ -18,3 +18,10 @@ version_check = { version = "~0.9" }
 
 # pick older version in order to support Rust 1.63
 toml_edit = { version = "~0.14" }
+
+[lints]
+workspace = true
+
+[package.metadata.clippy]
+# We don't care about exported API. How to put this in the workspace?
+avoid-breaking-exported-api = true
