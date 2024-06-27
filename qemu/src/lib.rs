@@ -2,7 +2,11 @@
 #![allow(dead_code)]
 
 pub mod bindings;
+pub use bindings::DeviceState;
 pub use bindings::Object;
+
+pub mod hw;
+pub use hw::core::device::DeviceMethods;
 
 pub mod qom;
 pub use qom::object::ObjectClassMethods;
