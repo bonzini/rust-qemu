@@ -5,9 +5,10 @@
 /// Similar to glib-rs but a bit simpler and possibly more
 /// idiomatic.
 use libc::c_char;
-use std::ffi::{c_void, CStr};
+use std::ffi::{c_void, CStr, CString};
 use std::fmt;
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::mem;
 use std::ptr;
 
@@ -313,6 +314,104 @@ impl<T: CloneToForeign + ?Sized> Drop for OwnedPointer<T> {
     }
 }
 
+/// A pointer whose contents were borrowed from a Rust object, and
+/// therefore whose lifetime is limited to the lifetime of the
+/// underlying Rust object.  The Rust object was borrowed from a
+/// shared reference, and therefore the pointer is not mutable.
+pub struct BorrowedPointer<'a, P, T: 'a> {
+    ptr: *const P,
+    storage: T,
+    _marker: PhantomData<&'a P>,
+}
+
+impl<'a, P, T: 'a> BorrowedPointer<'a, P, T> {
+    /// Return a new `BorrowedPointer` that wraps the pointer `ptr`.
+    /// `storage` can contain any other data that `ptr` points to,
+    /// and that should be dropped when the `BorrowedPointer` goes out
+    /// of scope.
+    pub fn new(ptr: *const P, storage: T) -> Self {
+        BorrowedPointer {
+            ptr,
+            storage,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Return the pointer that is stored in the `BorrowedPointer`.  The
+    /// pointer is valid for as long as the `BorrowedPointer` itself.
+    ///
+    /// ```
+    /// # use qemu::ForeignBorrow;
+    /// let s = "Hello, world!".to_string();
+    /// let borrowed = s.borrow_foreign();
+    /// let len = unsafe { libc::strlen(borrowed.as_ptr()) };
+    /// # assert_eq!(len, 13);
+    /// ```
+    pub fn as_ptr(&self) -> *const P {
+        self.ptr
+    }
+
+    fn map<U: 'a, F: FnOnce(T) -> U>(self, f: F) -> BorrowedPointer<'a, P, U> {
+        BorrowedPointer {
+            ptr: self.ptr,
+            storage: f(self.storage),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, P, T: 'a> Debug for BorrowedPointer<'a, P, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ptr_name = std::any::type_name::<*mut P>();
+        let storage_name = std::any::type_name::<T>();
+        let name = format!("BorrowedPointer<{}, {}>", ptr_name, storage_name);
+        f.debug_tuple(&name).field(&self.as_ptr()).finish()
+    }
+}
+
+/// A type for which a C representation can be borrowed without cloning.
+pub trait ForeignBorrow<'a>: CloneToForeign {
+    /// The type of any extra data that are needed while the `BorrowedPointer` is alive.
+    type Storage: 'a;
+
+    /// Return a wrapper for a C representation of `self`.  The wrapper
+    /// allows access via a constant pointer.
+    ///
+    /// ```
+    /// # use qemu::ForeignBorrow;
+    /// let s = "Hello, world!".to_string();
+    /// let borrowed = s.borrow_foreign();
+    /// let len = unsafe { libc::strlen(borrowed.as_ptr()) };
+    /// # assert_eq!(len, 13);
+    /// ```
+    fn borrow_foreign(&'a self) -> BorrowedPointer<'a, Self::Foreign, Self::Storage>;
+}
+
+impl<'a, T> ForeignBorrow<'a> for Option<T>
+where
+    T: ForeignBorrow<'a>,
+{
+    type Storage = Option<<T as ForeignBorrow<'a>>::Storage>;
+
+    fn borrow_foreign(&'a self) -> BorrowedPointer<'a, Self::Foreign, Self::Storage> {
+        match self.as_ref().map(ForeignBorrow::borrow_foreign) {
+            None => BorrowedPointer::new(ptr::null(), None),
+            Some(bp) => bp.map(Some),
+        }
+    }
+}
+
+impl<'a, T> ForeignBorrow<'a> for Box<T>
+where
+    T: ForeignBorrow<'a>,
+{
+    type Storage = <T as ForeignBorrow<'a>>::Storage;
+
+    fn borrow_foreign(&'a self) -> BorrowedPointer<'a, Self::Foreign, Self::Storage> {
+        self.as_ref().borrow_foreign()
+    }
+}
+
 impl CloneToForeign for str {
     type Foreign = c_char;
 
@@ -358,6 +457,15 @@ impl FromForeign for String {
     }
 }
 
+impl ForeignBorrow<'_> for String {
+    type Storage = CString;
+
+    fn borrow_foreign(&self) -> BorrowedPointer<c_char, CString> {
+        let tmp = CString::new(&self[..]).unwrap();
+        BorrowedPointer::new(tmp.as_ptr(), tmp)
+    }
+}
+
 macro_rules! foreign_copy_type {
     ($rust_type:ty, $foreign_type:ty) => {
         impl CloneToForeign for $rust_type {
@@ -383,6 +491,14 @@ macro_rules! foreign_copy_type {
             }
         }
 
+        impl<'a> ForeignBorrow<'a> for $rust_type {
+            type Storage = &'a Self;
+
+            fn borrow_foreign(&self) -> BorrowedPointer<Self::Foreign, &Self> {
+                BorrowedPointer::new(self, self)
+            }
+        }
+
         impl CloneToForeign for [$rust_type] {
             type Foreign = $foreign_type;
 
@@ -399,6 +515,14 @@ macro_rules! foreign_copy_type {
                     ptr::copy_nonoverlapping(self.as_ptr() as *const Self::Foreign, p, self.len());
                     OwnedPointer::new(p)
                 }
+            }
+        }
+
+        impl<'a> ForeignBorrow<'a> for [$rust_type] {
+            type Storage = &'a Self;
+
+            fn borrow_foreign(&self) -> BorrowedPointer<Self::Foreign, &Self> {
+                BorrowedPointer::new(self.as_ptr(), self)
             }
         }
     };
@@ -421,7 +545,6 @@ mod tests {
     #![allow(clippy::shadow_unrelated)]
 
     use super::*;
-    use cstr::cstr;
     use matches::assert_matches;
     use std::ffi::c_void;
 
@@ -442,11 +565,39 @@ mod tests {
     }
 
     #[test]
+    fn test_foreign_int_borrow() {
+        let i = 123i8;
+        unsafe {
+            assert_eq!(i, *i.borrow_foreign().as_ptr());
+        }
+        assert_eq!(i, 123i8);
+    }
+
+    #[test]
+    fn test_borrow_foreign_string() {
+        let s = "Hello, world!".to_string();
+        let borrowed = s.borrow_foreign();
+        unsafe {
+            let len = libc::strlen(borrowed.as_ptr());
+            assert_eq!(len, s.len());
+            assert_eq!(
+                libc::memcmp(
+                    borrowed.as_ptr() as *const c_void,
+                    "Hello, world!\0".as_bytes().as_ptr() as *const c_void,
+                    len + 1
+                ),
+                0
+            );
+        }
+    }
+
+    #[test]
     fn test_cloned_from_foreign_string() {
         let s = "Hello, world!".to_string();
-        let cstr = cstr!("Hello, world!");
-        let cloned = unsafe { String::cloned_from_foreign(cstr.as_ptr()) };
+        let borrowed = s.borrow_foreign();
+        let cloned = unsafe { String::cloned_from_foreign(s.borrow_foreign().as_ptr()) };
         assert_eq!(s, cloned);
+        assert_ne!(s.borrow_foreign().as_ptr(), borrowed.as_ptr());
     }
 
     #[test]
@@ -533,17 +684,36 @@ mod tests {
     }
 
     #[test]
+    fn test_borrow_foreign_bytes() {
+        let s = b"Hello, world!\0";
+        let borrowed = s.borrow_foreign();
+        unsafe {
+            let len = libc::strlen(borrowed.as_ptr() as *const c_char);
+            assert_eq!(len, s.len() - 1);
+            assert_eq!(
+                libc::memcmp(
+                    borrowed.as_ptr() as *const c_void,
+                    s.as_ptr() as *const c_void,
+                    len + 1
+                ),
+                0
+            );
+        }
+    }
+
+    #[test]
     fn test_clone_to_foreign_string() {
         let s = "Hello, world!".to_string();
-        let cstr = cstr!("Hello, world!");
+        let borrowed = s.borrow_foreign();
         let cloned = s.clone_to_foreign();
+        assert_ne!(borrowed.as_ptr(), cloned.as_ptr());
         unsafe {
             let len = libc::strlen(cloned.as_ptr());
             assert_eq!(len, s.len());
             assert_eq!(
                 libc::memcmp(
                     cloned.as_ptr() as *const c_void,
-                    cstr.as_ptr() as *const c_void,
+                    borrowed.as_ptr() as *const c_void,
                     len + 1
                 ),
                 0
@@ -555,9 +725,16 @@ mod tests {
     fn test_option() {
         // An Option can be used to produce or convert NULL pointers
         let s = Some("Hello, world!".to_string());
-        let cstr = cstr!("Hello, world!");
         unsafe {
-            assert_eq!(Option::<String>::cloned_from_foreign(cstr.as_ptr()), s);
+            assert_eq!(
+                Option::<String>::cloned_from_foreign(s.borrow_foreign().as_ptr()),
+                s
+            );
+        }
+
+        let s: Option<String> = None;
+        assert_eq!(s.borrow_foreign().as_ptr(), ptr::null());
+        unsafe {
             assert_matches!(Option::<String>::cloned_from_foreign(ptr::null()), None);
             assert_matches!(Option::<String>::from_foreign(ptr::null_mut()), None);
         }
@@ -566,13 +743,15 @@ mod tests {
     #[test]
     fn test_box() {
         // A box can be produced if the inner type has the capability.
+        // Contents of a Box can be borrowed.
         let s = Box::new("Hello, world!".to_string());
-        let cstr = cstr!("Hello, world!");
-        let cloned = unsafe { Box::<String>::cloned_from_foreign(cstr.as_ptr()) };
+        let borrowed = s.borrow_foreign();
+        let cloned = unsafe { Box::<String>::cloned_from_foreign(borrowed.as_ptr()) };
         assert_eq!(s, cloned);
 
         let s = Some(Box::new("Hello, world!".to_string()));
-        let cloned = unsafe { Option::<Box<String>>::cloned_from_foreign(cstr.as_ptr()) };
+        let borrowed = s.borrow_foreign();
+        let cloned = unsafe { Option::<Box<String>>::cloned_from_foreign(borrowed.as_ptr()) };
         assert_eq!(s, cloned);
     }
 }
