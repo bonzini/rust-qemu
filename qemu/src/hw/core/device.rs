@@ -17,12 +17,14 @@ use crate::qom_isa;
 
 use crate::Result;
 
+use cstr::cstr;
+
 use std::ffi::CStr;
 use std::ops::Deref;
 use std::ptr::null_mut;
 
 unsafe impl ObjectType for DeviceState {
-    const TYPE: &'static CStr = c"device";
+    const TYPE: &'static CStr = cstr!("device");
 }
 
 qom_isa!(DeviceState, Object);

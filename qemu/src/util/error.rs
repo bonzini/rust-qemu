@@ -7,6 +7,8 @@ use crate::bindings::error_free;
 use crate::bindings::error_get_pretty;
 use crate::bindings::error_setg_internal;
 
+use cstr::cstr;
+
 use std::ffi::CStr;
 use std::fmt::{self, Display};
 use std::ptr;
@@ -215,7 +217,7 @@ impl CloneToForeign for Error {
                 ptr::null_mut(), // FIXME
                 0,
                 ptr::null_mut(), // FIXME
-                c"%s".as_ptr(),
+                cstr!("%s").as_ptr(),
                 format!("{}", self),
             );
             OwnedPointer::new(x)

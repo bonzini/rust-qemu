@@ -1,4 +1,5 @@
 use const_default::ConstDefault;
+use cstr::cstr;
 
 use qemu::qom_define_type;
 use qemu::Object;
@@ -27,7 +28,7 @@ struct TestState {
 }
 
 qom_define_type!(
-    c"test-object",
+    cstr!("test-object"),
     TestObject,
     TestConf,
     ();
@@ -37,12 +38,12 @@ qom_define_type!(
 impl ObjectImpl for TestObject {}
 
 qdev_define_type!(
-    c"test-device",
+    cstr!("test-device"),
     TestDevice,
     TestConf,
     RefCell<TestState>;
     @extends DeviceState;
-    @properties [qdev_prop!(bool, c"foo", TestDevice, true, foo)]
+    @properties [qdev_prop!(bool, cstr!("foo"), TestDevice, true, foo)]
 );
 
 impl TestDevice {

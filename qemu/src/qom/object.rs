@@ -7,6 +7,8 @@ use std::ffi::CStr;
 use std::fmt;
 use std::ops::Deref;
 
+use cstr::cstr;
+
 use crate::bindings::object_get_typename;
 use crate::bindings::object_new;
 use crate::bindings::object_unparent;
@@ -38,7 +40,7 @@ pub unsafe trait ObjectType: Sized {
 }
 
 unsafe impl ObjectType for Object {
-    const TYPE: &'static CStr = c"object";
+    const TYPE: &'static CStr = cstr!("object");
 }
 
 // ------------------------------

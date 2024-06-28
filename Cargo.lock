@@ -24,6 +24,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cstr"
+version = "0.2.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a60f0dd132e4b67f20fd764d4835d968f666ff1a2f59e432983d168b98424deb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -93,6 +103,7 @@ name = "qemu"
 version = "0.1.0"
 dependencies = [
  "const-default",
+ "cstr",
  "libc",
  "matches",
 ]

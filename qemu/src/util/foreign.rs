@@ -421,6 +421,7 @@ mod tests {
     #![allow(clippy::shadow_unrelated)]
 
     use super::*;
+    use cstr::cstr;
     use matches::assert_matches;
     use std::ffi::c_void;
 
@@ -443,7 +444,7 @@ mod tests {
     #[test]
     fn test_cloned_from_foreign_string() {
         let s = "Hello, world!".to_string();
-        let cstr = c"Hello, world!";
+        let cstr = cstr!("Hello, world!");
         let cloned = unsafe { String::cloned_from_foreign(cstr.as_ptr()) };
         assert_eq!(s, cloned);
     }
@@ -534,7 +535,7 @@ mod tests {
     #[test]
     fn test_clone_to_foreign_string() {
         let s = "Hello, world!".to_string();
-        let cstr = c"Hello, world!";
+        let cstr = cstr!("Hello, world!");
         let cloned = s.clone_to_foreign();
         unsafe {
             let len = libc::strlen(cloned.as_ptr());
@@ -554,7 +555,7 @@ mod tests {
     fn test_option() {
         // An Option can be used to produce or convert NULL pointers
         let s = Some("Hello, world!".to_string());
-        let cstr = c"Hello, world!";
+        let cstr = cstr!("Hello, world!");
         unsafe {
             assert_eq!(Option::<String>::cloned_from_foreign(cstr.as_ptr()), s);
             assert_matches!(Option::<String>::cloned_from_foreign(ptr::null()), None);
@@ -566,7 +567,7 @@ mod tests {
     fn test_box() {
         // A box can be produced if the inner type has the capability.
         let s = Box::new("Hello, world!".to_string());
-        let cstr = c"Hello, world!";
+        let cstr = cstr!("Hello, world!");
         let cloned = unsafe { Box::<String>::cloned_from_foreign(cstr.as_ptr()) };
         assert_eq!(s, cloned);
 

@@ -48,7 +48,7 @@ Bindings for C classes
 struct must implement ObjectType
 
     unsafe impl ObjectType for Object {
-        const TYPE: &'static CStr = c"object";
+        const TYPE: &'static CStr = cstr!("object");
     }
 
 struct must implement IsA<T> for all superclasses T

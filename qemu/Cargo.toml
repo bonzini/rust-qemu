@@ -7,5 +7,8 @@ edition = "2021"
 const-default = { version = "~1", features = ["derive"] }
 libc = "^0"
 
+# pick older version in order to support Rust 1.63
+cstr = { version = "=0.2.10" }
+
 [dev-dependencies]
 matches = ">=0"
