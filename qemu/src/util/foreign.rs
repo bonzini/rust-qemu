@@ -369,6 +369,60 @@ impl<'a, P, T: 'a> Debug for BorrowedPointer<'a, P, T> {
     }
 }
 
+/// A pointer whose contents were borrowed from a Rust object, and
+/// therefore whose lifetime is limited to the lifetime of the
+/// underlying Rust object.  The Rust object is borrowed from an
+/// exclusive reference, and therefore the pointer is mutable.
+pub struct BorrowedMutPointer<'a, P, T: 'a> {
+    ptr: *mut P,
+    storage: T,
+    _marker: PhantomData<&'a P>,
+}
+
+impl<'a, P, T: 'a> BorrowedMutPointer<'a, P, T> {
+    /// Return a new `BorrowedMutPointer` that wraps the pointer `ptr`.
+    /// `storage` can contain any other data that `ptr` points to,
+    /// and that should be dropped when the `BorrowedMutPointer` goes out
+    /// of scope.
+    pub fn new(ptr: *mut P, storage: T) -> Self {
+        BorrowedMutPointer {
+            ptr,
+            storage,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Return the pointer that is stored in the `BorrowedPointer`.  The
+    /// returned pointer is constant and is valid for as long as the
+    /// `BorrowedPointer` itself.
+    pub fn as_ptr(&self) -> *const P {
+        self.ptr
+    }
+
+    /// Return the pointer that is stored in the `BorrowedPointer`.  The
+    /// returned pointer is mutable and is valid for as long as the
+    /// `BorrowedPointer` itself.
+    pub fn as_mut_ptr(&mut self) -> *mut P {
+        self.ptr
+    }
+
+    fn map<U: 'a, F: FnOnce(T) -> U>(self, f: F) -> BorrowedMutPointer<'a, P, U> {
+        BorrowedMutPointer {
+            ptr: self.ptr,
+            storage: f(self.storage),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, P, T: 'a> Debug for BorrowedMutPointer<'a, P, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = std::any::type_name::<*mut P>();
+        let name = format!("BorrowedMutPointer<{}>", name);
+        f.debug_tuple(&name).field(&self.as_ptr()).finish()
+    }
+}
+
 /// A type for which a C representation can be borrowed without cloning.
 pub trait ForeignBorrow<'a>: CloneToForeign {
     /// The type of any extra data that are needed while the `BorrowedPointer` is alive.
@@ -409,6 +463,60 @@ where
 
     fn borrow_foreign(&'a self) -> BorrowedPointer<'a, Self::Foreign, Self::Storage> {
         self.as_ref().borrow_foreign()
+    }
+}
+
+/// A type for which a C representation can be borrowed mutably without cloning.
+pub trait ForeignBorrowMut<'a>: CloneToForeign {
+    /// The type of any extra data that are needed while the `BorrowedPointer` is alive.
+    type Storage: 'a;
+
+    /// Return a wrapper for a C representation of `self`.  The wrapper
+    /// allows access via a mutable pointer.
+    ///
+    /// ```
+    /// # use qemu::ForeignBorrowMut;
+    /// let mut i = 123i8;
+    /// let mut borrowed = i.borrow_foreign_mut();
+    /// unsafe {
+    ///     assert_eq!(*borrowed.as_ptr(), 123i8);
+    ///     *borrowed.as_mut_ptr() = 45i8;
+    /// }
+    /// assert_eq!(i, 45i8);
+    /// ```
+    /// is analogous to:
+    /// ```
+    /// let mut i = 123i8;
+    /// let borrowed = &mut i;
+    /// assert_eq!(*borrowed, 123i8);
+    /// *borrowed = 45i8;
+    /// assert_eq!(i, 45i8);
+    /// ```
+    fn borrow_foreign_mut(&'a mut self) -> BorrowedMutPointer<'a, Self::Foreign, Self::Storage>;
+}
+
+impl<'a, T> ForeignBorrowMut<'a> for Option<T>
+where
+    T: ForeignBorrowMut<'a>,
+{
+    type Storage = Option<<T as ForeignBorrowMut<'a>>::Storage>;
+
+    fn borrow_foreign_mut(&'a mut self) -> BorrowedMutPointer<'a, T::Foreign, Self::Storage> {
+        match self.as_mut().map(ForeignBorrowMut::borrow_foreign_mut) {
+            None => BorrowedMutPointer::new(ptr::null_mut(), None),
+            Some(bp) => bp.map(Some),
+        }
+    }
+}
+
+impl<'a, T> ForeignBorrowMut<'a> for Box<T>
+where
+    T: ForeignBorrowMut<'a>,
+{
+    type Storage = <T as ForeignBorrowMut<'a>>::Storage;
+
+    fn borrow_foreign_mut(&'a mut self) -> BorrowedMutPointer<'a, Self::Foreign, Self::Storage> {
+        self.as_mut().borrow_foreign_mut()
     }
 }
 
@@ -499,6 +607,14 @@ macro_rules! foreign_copy_type {
             }
         }
 
+        impl<'a> ForeignBorrowMut<'a> for $rust_type {
+            type Storage = &'a mut Self;
+
+            fn borrow_foreign_mut(&'a mut self) -> BorrowedMutPointer<Self::Foreign, &'a mut Self> {
+                BorrowedMutPointer::new(self, self)
+            }
+        }
+
         impl CloneToForeign for [$rust_type] {
             type Foreign = $foreign_type;
 
@@ -523,6 +639,14 @@ macro_rules! foreign_copy_type {
 
             fn borrow_foreign(&self) -> BorrowedPointer<Self::Foreign, &Self> {
                 BorrowedPointer::new(self.as_ptr(), self)
+            }
+        }
+
+        impl<'a> ForeignBorrowMut<'a> for [$rust_type] {
+            type Storage = &'a mut Self;
+
+            fn borrow_foreign_mut(&'a mut self) -> BorrowedMutPointer<Self::Foreign, &'a mut Self> {
+                BorrowedMutPointer::new(self.as_mut_ptr(), self)
             }
         }
     };
@@ -571,6 +695,21 @@ mod tests {
             assert_eq!(i, *i.borrow_foreign().as_ptr());
         }
         assert_eq!(i, 123i8);
+    }
+
+    #[test]
+    fn test_foreign_int_borrow_mut() {
+        let mut i = 123i8;
+        let mut borrowed = i.borrow_foreign_mut();
+        unsafe {
+            assert_eq!(*borrowed.as_ptr(), 123i8);
+            *borrowed.as_mut_ptr() = 45i8;
+        }
+        let borrowed = i.borrow_foreign_mut();
+        unsafe {
+            assert_eq!(*borrowed.as_ptr(), 45i8);
+        }
+        assert_eq!(i, 45i8);
     }
 
     #[test]
