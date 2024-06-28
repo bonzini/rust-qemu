@@ -20,8 +20,8 @@ pub use qom::object::ObjectMethods;
 pub use qom::object::ObjectType;
 pub use qom::object_impl::ObjectImpl;
 pub use qom::object_impl::TypeImpl;
-pub use qom::refs::Arc;
 pub use qom::refs::ObjectCast;
+pub use qom::refs::Owned;
 
 pub mod util;
 pub use util::error::Error;

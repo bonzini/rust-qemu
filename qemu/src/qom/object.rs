@@ -14,9 +14,9 @@ use crate::bindings::Object;
 
 use crate::qom_isa;
 
-use crate::qom::refs::Arc;
 use crate::qom::refs::IsA;
 use crate::qom::refs::ObjectCast;
+use crate::qom::refs::Owned;
 
 /// Trait exposed by all structs corresponding to QOM objects.
 /// Defines "class methods" for the class.  Usually these can be
@@ -54,12 +54,12 @@ qom_isa!(Object);
 
 pub trait ObjectClassMethods: IsA<Object> {
     /// Return a new reference counted instance of this class
-    fn new() -> Arc<Self> {
+    fn new() -> Owned<Self> {
         // SAFETY: the object created by object_new is allocated on
         // the heap and has a reference count of 1
         unsafe {
             let obj = &*object_new(Self::TYPE.as_ptr());
-            Arc::from_raw(obj.unsafe_cast::<Self>())
+            Owned::from_raw(obj.unsafe_cast::<Self>())
         }
     }
 }

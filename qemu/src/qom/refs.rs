@@ -138,20 +138,20 @@ impl<T: ObjectType> ObjectCast for &T {}
 /// An owned reference to a QOM object.
 ///
 /// Like [`std::sync::Arc`], references are added with [`Clone::clone`] and removed
-/// by dropping the `Arc`.
+/// by dropping the `Owned`.
 #[derive(PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Arc<T: ObjectType>(NonNull<T>);
+pub struct Owned<T: ObjectType>(NonNull<T>);
 
 // QOM knows how to handle reference counting across threads, but sending
-// the Arc to another thread requires the implementation itself to be
+// the Owned to another thread requires the implementation itself to be
 // thread-safe (aka Sync).  But I'm not entirely sure that this is enough
 // (see for example ARef in rust/kernel/types.rs, which is very similar
 // to this type).
 //
-//unsafe impl<T: Sync + ObjectType> Send for Arc<T> {}
-//unsafe impl<T: ObjectType> Sync for Arc<T> {}
+//unsafe impl<T: Sync + ObjectType> Send for Owned<T> {}
+//unsafe impl<T: ObjectType> Sync for Owned<T> {}
 
-impl<T: ObjectType> Arc<T> {
+impl<T: ObjectType> Owned<T> {
     /// Obtain a reference from a raw C pointer
     ///
     /// # Safety
@@ -162,7 +162,7 @@ impl<T: ObjectType> Arc<T> {
         // SAFETY NOTE: while NonNull requires a mutable pointer,
         // only Deref is implemented so the pointer passed to from_raw
         // remains const
-        Arc(NonNull::new_unchecked(ptr.cast_mut()))
+        Owned(NonNull::new_unchecked(ptr.cast_mut()))
     }
 
     /// Increase the reference count of a QOM object and return
@@ -170,35 +170,35 @@ impl<T: ObjectType> Arc<T> {
     /// # Safety
     ///
     /// Unsafe because the object could be embedded in another.  To
-    /// obtain an `Arc` safely, use `ObjectType::new()`.
+    /// obtain an `Owned` safely, use `ObjectType::new()`.
     pub unsafe fn from(obj: &T) -> Self {
         object_ref(obj.unsafe_cast::<Object>().as_mut_ptr());
 
         // SAFETY NOTE: while NonNull requires a mutable pointer,
         // only Deref is implemented so the pointer passed to from_raw
         // remains const
-        Arc(NonNull::new_unchecked(obj.as_mut_ptr()))
+        Owned(NonNull::new_unchecked(obj.as_mut_ptr()))
     }
 
     /// Perform a cast to a superclass
-    pub fn upcast<U: ObjectType>(src: Arc<T>) -> Arc<U>
+    pub fn upcast<U: ObjectType>(src: Owned<T>) -> Owned<U>
     where
         T: IsA<U>,
     {
         // SAFETY: soundness is declared via IsA<U>, which is an unsafe trait
-        unsafe { Arc::unsafe_cast::<U>(src) }
+        unsafe { Owned::unsafe_cast::<U>(src) }
     }
 
     /// Perform a cast to a subclass.  Checks at compile time that the
     /// cast can succeed, but the final verification will happen at
     /// runtime only.
-    pub fn downcast<U: IsA<T>>(src: Arc<T>) -> Result<Arc<U>, Arc<T>> {
-        Arc::dynamic_cast::<U>(src)
+    pub fn downcast<U: IsA<T>>(src: Owned<T>) -> Result<Owned<U>, Owned<T>> {
+        Owned::dynamic_cast::<U>(src)
     }
 
     /// Perform a cast between QOM types.  The check that U is indeed
     /// the dynamic type of `self` happens at runtime.
-    pub fn dynamic_cast<U: ObjectType>(src: Arc<T>) -> Result<Arc<U>, Arc<T>> {
+    pub fn dynamic_cast<U: ObjectType>(src: Owned<T>) -> Result<Owned<U>, Owned<T>> {
         // override automatic drop to skip the unref/ref
         let src = ManuallyDrop::new(src);
         match src.dynamic_cast::<U>() {
@@ -207,7 +207,7 @@ impl<T: ObjectType> Arc<T> {
 
             // SAFETY: the ref is moved (thanks to ManuallyDrop) from
             // self to casted_ref
-            Some(casted_ref) => Ok(unsafe { Arc::<U>::from_raw(casted_ref) }),
+            Some(casted_ref) => Ok(unsafe { Owned::<U>::from_raw(casted_ref) }),
         }
     }
 
@@ -217,35 +217,35 @@ impl<T: ObjectType> Arc<T> {
     ///
     /// What safety? You need to know yourself that the cast is correct.  Only use
     /// when performance is paramount
-    pub unsafe fn unsafe_cast<U: ObjectType>(src: Arc<T>) -> Arc<U> {
+    pub unsafe fn unsafe_cast<U: ObjectType>(src: Owned<T>) -> Owned<U> {
         // override automatic drop to skip the unref/ref
         let src = ManuallyDrop::new(src);
         let casted_ref = src.unsafe_cast::<U>();
-        Arc::<U>::from_raw(casted_ref)
+        Owned::<U>::from_raw(casted_ref)
     }
 }
 
-impl<T: ObjectType> AsRef<T> for Arc<T> {
+impl<T: ObjectType> AsRef<T> for Owned<T> {
     fn as_ref(&self) -> &T {
         self.deref()
     }
 }
 
-impl<T: ObjectType> Borrow<T> for Arc<T> {
+impl<T: ObjectType> Borrow<T> for Owned<T> {
     fn borrow(&self) -> &T {
         self.deref()
     }
 }
 
-impl<T: ObjectType> Clone for Arc<T> {
+impl<T: ObjectType> Clone for Owned<T> {
     fn clone(&self) -> Self {
         // SAFETY: creation method is unsafe, and whoever calls it
         // has responsibility that the pointer is valid
-        unsafe { Arc::from(self.deref()) }
+        unsafe { Owned::from(self.deref()) }
     }
 }
 
-impl<T: ObjectType> Deref for Arc<T> {
+impl<T: ObjectType> Deref for Owned<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -257,7 +257,7 @@ impl<T: ObjectType> Deref for Arc<T> {
     }
 }
 
-impl<T: ObjectType> Drop for Arc<T> {
+impl<T: ObjectType> Drop for Owned<T> {
     fn drop(&mut self) {
         // SAFETY: creation method is unsafe, and whoever calls it
         // has responsibility that the pointer is valid
@@ -267,7 +267,7 @@ impl<T: ObjectType> Drop for Arc<T> {
     }
 }
 
-impl<T: IsA<Object>> Debug for Arc<T> {
+impl<T: IsA<Object>> Debug for Owned<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.deref().debug_fmt(f)
     }
